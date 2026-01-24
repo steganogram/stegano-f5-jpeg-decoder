@@ -97,6 +97,30 @@ pub enum ColorTransform {
     JcsBgRgb,
 }
 
+/// Result of raw coefficient decoding — provides access to quantized DCT
+/// coefficients without dequantization or IDCT.
+#[derive(Clone, Debug)]
+pub struct RawCoefficients {
+    /// Quantized DCT coefficients per component (Y, Cb, Cr, ...).
+    /// Each component's data is a flat Vec<i16> with 64 values per 8x8 block.
+    /// Coefficients are in natural (unzigzagged) order.
+    /// Index 0 of each 64-value block: DC coefficient.
+    /// Index 1-63: AC coefficients.
+    pub components: Vec<Vec<i16>>,
+
+    /// Image width in pixels.
+    pub width: u16,
+
+    /// Image height in pixels.
+    pub height: u16,
+
+    /// Number of 8x8 blocks per component.
+    pub blocks_per_component: Vec<usize>,
+
+    /// Quantization tables used (needed for re-encoding with same quality).
+    pub quantization_tables: Vec<[u16; 64]>,
+}
+
 /// JPEG decoder
 pub struct Decoder<R> {
     reader: R,
@@ -125,6 +149,10 @@ pub struct Decoder<R> {
     // Bitmask of which coefficients has been completely decoded.
     coefficients_finished: [u64; MAX_COMPONENTS],
 
+    // When true, collect coefficients instead of dispatching to IDCT workers.
+    // Used for raw coefficient extraction (F5 steganography).
+    raw_coefficient_mode: bool,
+
     // Maximum allowed size of decoded image buffer
     decoding_buffer_size_limit: usize,
 }
@@ -149,6 +177,7 @@ impl<R: Read> Decoder<R> {
             psir_data: None,
             coefficients: Vec::new(),
             coefficients_finished: [0; MAX_COMPONENTS],
+            raw_coefficient_mode: false,
             decoding_buffer_size_limit: usize::MAX,
         }
     }
@@ -193,9 +222,17 @@ impl<R: Read> Decoder<R> {
         }
     }
 
+    /// Returns the frame information parsed from the SOF marker.
+    ///
+    /// The returned value will be `None` until a call to either `read_info` or `decode` has
+    /// returned `Ok`.
+    pub fn frame_info(&self) -> Option<&FrameInfo> {
+        self.frame.as_ref()
+    }
+
     /// Returns raw exif data, starting at the TIFF header, if the image contains any.
     ///
-    /// The returned value will be `None` until a call to `decode` has returned `Ok`.    
+    /// The returned value will be `None` until a call to `decode` has returned `Ok`.
     pub fn exif_data(&self) -> Option<&[u8]> {
         self.exif_data.as_deref()
     }
@@ -292,6 +329,59 @@ impl<R: Read> Decoder<R> {
     /// Decodes the image and returns the decoded pixels if successful.
     pub fn decode(&mut self) -> Result<Vec<u8>> {
         WorkerScope::with(|worker| self.decode_internal(false, worker))
+    }
+
+    /// Decode JPEG and return raw quantized DCT coefficients.
+    ///
+    /// This performs parsing and Huffman decoding but skips dequantization,
+    /// IDCT, and color conversion. The returned coefficients are in the
+    /// quantized domain -- exactly what F5 steganography operates on.
+    ///
+    /// Coefficients are stored in natural (unzigzagged) order per 8x8 block,
+    /// with 64 values per block. Index 0 is the DC coefficient; indices 1-63
+    /// are AC coefficients.
+    pub fn decode_raw_coefficients(&mut self) -> Result<RawCoefficients> {
+        self.raw_coefficient_mode = true;
+
+        // Run the decode pipeline; in raw mode, coefficients are collected
+        // into self.coefficients instead of being dispatched to IDCT workers.
+        // We ignore the pixel output (it will be empty in raw mode).
+        WorkerScope::with(|worker| self.decode_internal(false, worker))?;
+
+        let frame = self.frame.as_ref().ok_or_else(|| {
+            Error::Format("no frame found in JPEG".to_owned())
+        })?;
+
+        let width = frame.image_size.width;
+        let height = frame.image_size.height;
+
+        let blocks_per_component: Vec<usize> = frame
+            .components
+            .iter()
+            .map(|c| c.block_size.width as usize * c.block_size.height as usize)
+            .collect();
+
+        // Collect quantization tables for each component.
+        let quantization_tables: Vec<[u16; 64]> = frame
+            .components
+            .iter()
+            .map(|c| {
+                self.quantization_tables[c.quantization_table_index]
+                    .as_ref()
+                    .map(|t| **t)
+                    .unwrap_or([0u16; 64])
+            })
+            .collect();
+
+        let components = mem::take(&mut self.coefficients);
+
+        Ok(RawCoefficients {
+            components,
+            width,
+            height,
+            blocks_per_component,
+            quantization_tables,
+        })
     }
 
     fn decode_internal(
@@ -397,7 +487,8 @@ impl<R: Read> Decoder<R> {
                     let frame = self.frame.clone().unwrap();
                     let scan = parse_sos(&mut self.reader, &frame)?;
 
-                    if frame.coding_process == CodingProcess::DctProgressive
+                    if (frame.coding_process == CodingProcess::DctProgressive
+                        || self.raw_coefficient_mode)
                         && self.coefficients.is_empty()
                     {
                         self.coefficients = frame
@@ -604,6 +695,12 @@ impl<R: Read> Decoder<R> {
             return Err(Error::Format(
                 "end of image encountered before frame".to_owned(),
             ));
+        }
+
+        // In raw coefficient mode, skip dequantization/IDCT/color conversion.
+        // The coefficients are already collected in self.coefficients.
+        if self.raw_coefficient_mode {
+            return Ok(Vec::new());
         }
 
         let frame = self.frame.as_ref().unwrap();
@@ -845,18 +942,22 @@ impl<R: Read> Decoder<R> {
         }
 
         // Prepare the worker thread for the work to come.
-        for (i, component) in components.iter().enumerate() {
-            if finished[i] {
-                let row_data = RowData {
-                    index: i,
-                    component: component.clone(),
-                    quantization_table: self.quantization_tables
-                        [component.quantization_table_index]
-                        .clone()
-                        .unwrap(),
-                };
+        // Skip worker preparation in raw coefficient mode since we collect
+        // coefficients directly without dequantization or IDCT.
+        if !self.raw_coefficient_mode {
+            for (i, component) in components.iter().enumerate() {
+                if finished[i] {
+                    let row_data = RowData {
+                        index: i,
+                        component: component.clone(),
+                        quantization_table: self.quantization_tables
+                            [component.quantization_table_index]
+                            .clone()
+                            .unwrap(),
+                    };
 
-                worker.start(row_data)?;
+                    worker.start(row_data)?;
+                }
             }
         }
 
@@ -1053,9 +1154,25 @@ impl<R: Read> Decoder<R> {
                         )
                     };
 
-                    // FIXME: additional potential work stealing opportunities for rayon case if we
-                    // also internally can parallelize over components.
-                    worker.append_row((i, row_coefficients))?;
+                    if self.raw_coefficient_mode && !is_progressive {
+                        // In raw coefficient mode for baseline scans, store
+                        // the decoded coefficients directly into self.coefficients
+                        // instead of dispatching to the IDCT worker.
+                        let component_index = scan.component_indices[i];
+                        let worker_mcu_y = if is_interleaved {
+                            mcu_y
+                        } else {
+                            mcu_y / component.vertical_sampling_factor as u16
+                        };
+                        let offset = worker_mcu_y as usize * coefficients_per_mcu_row;
+                        self.coefficients[component_index]
+                            [offset..offset + coefficients_per_mcu_row]
+                            .copy_from_slice(&row_coefficients);
+                    } else if !self.raw_coefficient_mode {
+                        // FIXME: additional potential work stealing opportunities for rayon case if we
+                        // also internally can parallelize over components.
+                        worker.append_row((i, row_coefficients))?;
+                    }
                 }
             }
         }
@@ -1065,7 +1182,11 @@ impl<R: Read> Decoder<R> {
             marker = self.read_marker().ok();
         }
 
-        if finished.iter().any(|&c| c) {
+        if self.raw_coefficient_mode {
+            // In raw coefficient mode, we don't use workers and don't produce
+            // pixel data. The coefficients are already stored in self.coefficients.
+            Ok((marker, None))
+        } else if finished.iter().any(|&c| c) {
             // Retrieve all the data from the worker thread.
             let mut data = vec![Vec::new(); frame.components.len()];
 
@@ -1505,4 +1626,114 @@ fn stbi_f2f(x: f32) -> i32 {
 
 fn clamp_fixed_point(value: i32) -> u8 {
     (value >> FIXED_POINT_OFFSET).min(255).max(0) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_decode_raw_coefficients_progressive() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/reftest/images/mozilla/jpg-progressive.jpg");
+        let data = std::fs::read(&path).expect("failed to read test JPEG");
+        let mut decoder = Decoder::new(&data[..]);
+        let raw = decoder.decode_raw_coefficients().unwrap();
+
+        assert!(raw.width > 0);
+        assert!(raw.height > 0);
+        assert!(!raw.components.is_empty());
+        assert!(!raw.components[0].is_empty());
+        // Each component's length should be a multiple of 64 (one 8x8 block)
+        for comp in &raw.components {
+            assert_eq!(comp.len() % 64, 0, "component length not a multiple of 64");
+        }
+        // blocks_per_component should match component data lengths
+        for (i, blocks) in raw.blocks_per_component.iter().enumerate() {
+            assert_eq!(
+                raw.components[i].len(),
+                blocks * 64,
+                "blocks_per_component mismatch for component {}",
+                i
+            );
+        }
+        // Should have quantization tables for each component
+        assert_eq!(raw.quantization_tables.len(), raw.components.len());
+        // Quantization tables should not be all zeros
+        for qt in &raw.quantization_tables {
+            assert!(qt.iter().any(|&v| v != 0), "quantization table is all zeros");
+        }
+    }
+
+    #[test]
+    fn test_decode_raw_coefficients_baseline() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/reftest/images/extraneous-data.jpg");
+        let data = std::fs::read(&path).expect("failed to read test JPEG");
+        let mut decoder = Decoder::new(&data[..]);
+        let raw = decoder.decode_raw_coefficients().unwrap();
+
+        assert!(raw.width > 0);
+        assert!(raw.height > 0);
+        assert!(!raw.components.is_empty());
+        assert!(!raw.components[0].is_empty());
+        // Each component's length should be a multiple of 64
+        for comp in &raw.components {
+            assert_eq!(comp.len() % 64, 0, "component length not a multiple of 64");
+        }
+        for (i, blocks) in raw.blocks_per_component.iter().enumerate() {
+            assert_eq!(
+                raw.components[i].len(),
+                blocks * 64,
+                "blocks_per_component mismatch for component {}",
+                i
+            );
+        }
+        assert_eq!(raw.quantization_tables.len(), raw.components.len());
+        for qt in &raw.quantization_tables {
+            assert!(qt.iter().any(|&v| v != 0), "quantization table is all zeros");
+        }
+    }
+
+    #[test]
+    fn test_decode_raw_coefficients_grayscale() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/reftest/images/mozilla/jpg-gray.jpg");
+        let data = std::fs::read(&path).expect("failed to read test JPEG");
+        let mut decoder = Decoder::new(&data[..]);
+        let raw = decoder.decode_raw_coefficients().unwrap();
+
+        assert!(raw.width > 0);
+        assert!(raw.height > 0);
+        // Grayscale has exactly 1 component
+        assert_eq!(raw.components.len(), 1);
+        assert!(!raw.components[0].is_empty());
+        assert_eq!(raw.components[0].len() % 64, 0);
+        assert_eq!(raw.blocks_per_component.len(), 1);
+        assert_eq!(raw.components[0].len(), raw.blocks_per_component[0] * 64);
+        assert_eq!(raw.quantization_tables.len(), 1);
+    }
+
+    #[test]
+    fn test_decode_raw_coefficients_has_nonzero_coefficients() {
+        // Verify that the decoded coefficients actually contain meaningful data
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/reftest/images/mozilla/jpg-progressive.jpg");
+        let data = std::fs::read(&path).expect("failed to read test JPEG");
+        let mut decoder = Decoder::new(&data[..]);
+        let raw = decoder.decode_raw_coefficients().unwrap();
+
+        // At minimum, DC coefficients (every 64th value starting at 0) should have nonzero values
+        let has_nonzero_dc = raw.components[0]
+            .chunks(64)
+            .any(|block| block[0] != 0);
+        assert!(has_nonzero_dc, "expected at least some nonzero DC coefficients");
+
+        // And at least some AC coefficients should be nonzero
+        let has_nonzero_ac = raw.components[0]
+            .chunks(64)
+            .any(|block| block[1..].iter().any(|&v| v != 0));
+        assert!(has_nonzero_ac, "expected at least some nonzero AC coefficients");
+    }
 }

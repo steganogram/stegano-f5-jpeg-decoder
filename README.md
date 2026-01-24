@@ -1,9 +1,17 @@
-**WARNING: This crate is in maintenance mode as _image-rs_ seeks to move over to the zune-jpeg crate. However, since other Rust JPEG crates do not support lossless mode, we will continue to welcome PRs related to that functionality.**
+# stegano-f5-jpeg-decoder
+
+This is a fork of [image-rs/jpeg-decoder](https://github.com/image-rs/jpeg-decoder) with modifications for 
+[stegano-f5](https://github.com/steganogram/stegano-rs/tree/main/crates/stegano-f5).
+
+Which is a specific steganographic algorithm for jpeg images.
 
 ---
-# jpeg-decoder
 
-[![Rust CI](https://github.com/image-rs/jpeg-decoder/workflows/Rust%20CI/badge.svg)](https://github.com/image-rs/jpeg-decoder/actions)
+## original jpeg-decoder README
+
+**WARNING: This crate is in maintenance mode as _image-rs_ seeks to move over to the zune-jpeg crate. However, since other Rust JPEG crates do not support lossless mode, we will continue to welcome PRs related to that functionality.**
+
+[![Rust CI](https://github.com/steganogram/stegano-f5-jpeg-decoder/workflows/Rust%20CI/badge.svg)](https://github.com/steganogram/stegano-f5-jpeg-decoder/actions)
 [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/k65rrkd0f8yb4o9w/branch/master?svg=true)](https://ci.appveyor.com/project/kaksmet/jpeg-decoder/branch/master)
 [![crates.io](https://img.shields.io/crates/v/jpeg-decoder.svg)](https://crates.io/crates/jpeg-decoder)
 
@@ -21,7 +29,7 @@ jpeg-decoder = "0.3"
 
 main.rs:
 ```rust
-extern crate jpeg_decoder as jpeg;
+extern crate stegano_f5_jpeg_decoder as jpeg;
 
 use std::fs::File;
 use std::io::BufReader;

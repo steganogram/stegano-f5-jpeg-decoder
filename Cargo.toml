@@ -1,17 +1,15 @@
 [package]
-name = "jpeg-decoder"
+name = "stegano-f5-jpeg-decoder"
 version = "0.3.2"
-edition = "2021"
-
-rust-version = "1.61.0"
+edition = "2024"
 
 license = "MIT OR Apache-2.0"
-description = "JPEG decoder"
+description = "JPEG decoder with modifications for stegano-f5"
 authors = ["The image-rs Developers"]
 readme = "README.md"
 
 documentation = "https://docs.rs/jpeg-decoder"
-repository = "https://github.com/image-rs/jpeg-decoder"
+repository = "https://github.com/steganogram/stegano-f5-jpeg-decoder"
 keywords = ["jpeg", "jpg", "decoder", "image"]
 exclude = ["/tests/*", "!/tests/*.rs"]
 

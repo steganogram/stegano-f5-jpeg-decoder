@@ -3,7 +3,7 @@
 //! # Examples
 //!
 //! ```
-//! use jpeg_decoder::Decoder;
+//! use stegano_f5_jpeg_decoder::Decoder;
 //! use std::fs::File;
 //! use std::io::BufReader;
 //!
@@ -16,7 +16,7 @@
 //! Get metadata from a file without decoding it:
 //!
 //! ```
-//! use jpeg_decoder::Decoder;
+//! use stegano_f5_jpeg_decoder::Decoder;
 //! use std::fs::File;
 //! use std::io::BufReader;
 //!
@@ -36,9 +36,9 @@ extern crate core;
 #[cfg(feature = "rayon")]
 extern crate rayon;
 
-pub use decoder::{ColorTransform, Decoder, ImageInfo, PixelFormat};
+pub use decoder::{ColorTransform, Decoder, ImageInfo, PixelFormat, RawCoefficients};
 pub use error::{Error, UnsupportedFeature};
-pub use parser::CodingProcess;
+pub use parser::{CodingProcess, Component, EntropyCoding, FrameInfo};
 
 use std::io;
 

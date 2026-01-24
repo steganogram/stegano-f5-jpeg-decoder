@@ -1,9 +1,9 @@
 extern crate criterion;
-extern crate jpeg_decoder;
+extern crate stegano_f5_jpeg_decoder;
 
-use criterion::{black_box, Criterion};
+use criterion::{Criterion, black_box};
 
-use jpeg_decoder as jpeg;
+use stegano_f5_jpeg_decoder as jpeg;
 
 fn read_image(image: &[u8]) -> Vec<u8> {
     jpeg::Decoder::new(black_box(image)).decode().unwrap()

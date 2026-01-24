@@ -1,4 +1,4 @@
-use jpeg_decoder::{Decoder, Error};
+use stegano_f5_jpeg_decoder::{Decoder, Error};
 
 mod utils;
 

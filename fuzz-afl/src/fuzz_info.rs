@@ -1,6 +1,6 @@
 use afl::fuzz;
 
-use jpeg_decoder::{Decoder, ImageInfo};
+use stegano_f5_jpeg_decoder::{Decoder, ImageInfo};
 
 #[inline(always)]
 fn get_info(data: &[u8]) -> Option<ImageInfo> {

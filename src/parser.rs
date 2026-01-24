@@ -15,9 +15,12 @@ pub struct Dimensions {
     pub height: u16,
 }
 
+/// The entropy coding method used in the JPEG image.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum EntropyCoding {
+    /// Huffman coding (most common)
     Huffman,
+    /// Arithmetic coding
     Arithmetic,
 }
 
@@ -46,17 +49,26 @@ pub enum Predictor {
 }
 
 
+/// Information from the JPEG frame header (SOF marker).
 #[derive(Clone)]
 pub struct FrameInfo {
+    /// Whether this is a baseline DCT frame (SOF0).
     pub is_baseline: bool,
+    /// Whether this is a differential frame.
     pub is_differential: bool,
+    /// The coding process (sequential, progressive, or lossless).
     pub coding_process: CodingProcess,
+    /// The entropy coding method (Huffman or arithmetic).
     pub entropy_coding: EntropyCoding,
+    /// Sample precision in bits (typically 8 or 12).
     pub precision: u8,
-
+    /// The original image dimensions.
     pub image_size: Dimensions,
+    /// The output dimensions (may differ due to scaling).
     pub output_size: Dimensions,
+    /// The MCU (Minimum Coded Unit) grid dimensions.
     pub mcu_size: Dimensions,
+    /// The image components (Y, Cb, Cr, etc.).
     pub components: Vec<Component>,
 }
 
@@ -73,18 +85,22 @@ pub struct ScanInfo {
     pub point_transform: u8, // for lossless
 }
 
+/// A JPEG image component (e.g., Y, Cb, Cr).
 #[derive(Clone, Debug)]
 pub struct Component {
+    /// Component identifier (1=Y, 2=Cb, 3=Cr in JFIF).
     pub identifier: u8,
-
+    /// Horizontal sampling factor (1-4).
     pub horizontal_sampling_factor: u8,
+    /// Vertical sampling factor (1-4).
     pub vertical_sampling_factor: u8,
-
+    /// Index of the quantization table used by this component.
     pub quantization_table_index: usize,
-
+    /// DCT scaling factor.
     pub dct_scale: usize,
-
+    /// Component dimensions in pixels.
     pub size: Dimensions,
+    /// Component dimensions in 8x8 blocks.
     pub block_size: Dimensions,
 }
 

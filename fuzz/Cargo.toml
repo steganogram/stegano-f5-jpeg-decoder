@@ -17,7 +17,7 @@ path = ".."
 
 [dependencies.previous]
 package = "jpeg-decoder"
-git = "https://github.com/image-rs/jpeg-decoder"
+git = "https://github.com/steganogram/stegano-f5-jpeg-decoder"
 
 [dependencies.image]
 version = "0.23.4"

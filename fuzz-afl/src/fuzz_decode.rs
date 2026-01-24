@@ -1,6 +1,6 @@
 use afl::fuzz;
 
-use jpeg_decoder::{Decoder, Error};
+use stegano_f5_jpeg_decoder::{Decoder, Error};
 
 #[inline(always)]
 fn decode(data: &[u8]) -> Result<Vec<u8>, Error> {
