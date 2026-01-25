@@ -102,7 +102,7 @@ pub enum ColorTransform {
 #[derive(Clone, Debug)]
 pub struct RawCoefficients {
     /// Quantized DCT coefficients per component (Y, Cb, Cr, ...).
-    /// Each component's data is a flat Vec<i16> with 64 values per 8x8 block.
+    /// Each component's data is a flat `Vec<i16>` with 64 values per 8x8 block.
     /// Coefficients are in natural (unzigzagged) order.
     /// Index 0 of each 64-value block: DC coefficient.
     /// Index 1-63: AC coefficients.
