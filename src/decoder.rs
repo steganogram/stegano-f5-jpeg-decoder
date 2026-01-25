@@ -1,14 +1,14 @@
 use crate::error::{Error, Result, UnsupportedFeature};
-use crate::huffman::{fill_default_mjpeg_tables, HuffmanDecoder, HuffmanTable};
+use crate::huffman::{HuffmanDecoder, HuffmanTable, fill_default_mjpeg_tables};
 use crate::marker::Marker;
 use crate::parser::{
-    parse_app, parse_com, parse_dht, parse_dqt, parse_dri, parse_sof, parse_sos,
     AdobeColorTransform, AppData, CodingProcess, Component, Dimensions, EntropyCoding, FrameInfo,
-    IccChunk, ScanInfo,
+    IccChunk, ScanInfo, parse_app, parse_com, parse_dht, parse_dqt, parse_dri, parse_sof,
+    parse_sos,
 };
 use crate::read_u8;
 use crate::upsampler::Upsampler;
-use crate::worker::{compute_image_parallel, PreferWorkerKind, RowData, Worker, WorkerScope};
+use crate::worker::{PreferWorkerKind, RowData, Worker, WorkerScope, compute_image_parallel};
 use alloc::borrow::ToOwned;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -348,9 +348,10 @@ impl<R: Read> Decoder<R> {
         // We ignore the pixel output (it will be empty in raw mode).
         WorkerScope::with(|worker| self.decode_internal(false, worker))?;
 
-        let frame = self.frame.as_ref().ok_or_else(|| {
-            Error::Format("no frame found in JPEG".to_owned())
-        })?;
+        let frame = self
+            .frame
+            .as_ref()
+            .ok_or_else(|| Error::Format("no frame found in JPEG".to_owned()))?;
 
         let width = frame.image_size.width;
         let height = frame.image_size.height;
@@ -611,7 +612,7 @@ impl<R: Read> Decoder<R> {
                 Marker::DAC => {
                     return Err(Error::Unsupported(
                         UnsupportedFeature::ArithmeticEntropyCoding,
-                    ))
+                    ));
                 }
                 // Restart interval definition
                 Marker::DRI => self.restart_interval = parse_dri(&mut self.reader)?,
@@ -674,7 +675,7 @@ impl<R: Read> Decoder<R> {
 
                 // Hierarchical mode markers
                 Marker::DHP | Marker::EXP => {
-                    return Err(Error::Unsupported(UnsupportedFeature::Hierarchical))
+                    return Err(Error::Unsupported(UnsupportedFeature::Hierarchical));
                 }
 
                 // End of image
@@ -684,7 +685,7 @@ impl<R: Read> Decoder<R> {
                     return Err(Error::Format(format!(
                         "{:?} marker found where not allowed",
                         marker
-                    )))
+                    )));
                 }
             }
 
@@ -730,7 +731,7 @@ impl<R: Read> Decoder<R> {
             .len()
             .checked_mul(frame.output_size.width.into())
             .and_then(|m| m.checked_mul(frame.output_size.height.into()))
-            .map_or(true, |m| self.decoding_buffer_size_limit < m)
+            .is_none_or(|m| self.decoding_buffer_size_limit < m)
         {
             return Err(Error::Format(
                 "size of decoded image exceeds maximum allowed size".to_owned(),
@@ -887,7 +888,7 @@ impl<R: Read> Decoder<R> {
         }
     }
 
-#[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity)]
     fn decode_scan(
         &mut self,
         frame: &FrameInfo,
@@ -1042,13 +1043,13 @@ impl<R: Read> Decoder<R> {
                                 return Err(Error::Format(format!(
                                     "found marker {:?} inside scan where RST{} was expected",
                                     marker, expected_rst_num
-                                )))
+                                )));
                             }
                             None => {
                                 return Err(Error::Format(format!(
                                     "no marker found where RST{} was expected",
                                     expected_rst_num
-                                )))
+                                )));
                             }
                         }
                     }
@@ -1625,7 +1626,7 @@ fn stbi_f2f(x: f32) -> i32 {
 }
 
 fn clamp_fixed_point(value: i32) -> u8 {
-    (value >> FIXED_POINT_OFFSET).min(255).max(0) as u8
+    (value >> FIXED_POINT_OFFSET).clamp(0, 255) as u8
 }
 
 #[cfg(test)]
@@ -1662,14 +1663,17 @@ mod tests {
         assert_eq!(raw.quantization_tables.len(), raw.components.len());
         // Quantization tables should not be all zeros
         for qt in &raw.quantization_tables {
-            assert!(qt.iter().any(|&v| v != 0), "quantization table is all zeros");
+            assert!(
+                qt.iter().any(|&v| v != 0),
+                "quantization table is all zeros"
+            );
         }
     }
 
     #[test]
     fn test_decode_raw_coefficients_baseline() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/reftest/images/extraneous-data.jpg");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reftest/images/extraneous-data.jpg");
         let data = std::fs::read(&path).expect("failed to read test JPEG");
         let mut decoder = Decoder::new(&data[..]);
         let raw = decoder.decode_raw_coefficients().unwrap();
@@ -1692,14 +1696,17 @@ mod tests {
         }
         assert_eq!(raw.quantization_tables.len(), raw.components.len());
         for qt in &raw.quantization_tables {
-            assert!(qt.iter().any(|&v| v != 0), "quantization table is all zeros");
+            assert!(
+                qt.iter().any(|&v| v != 0),
+                "quantization table is all zeros"
+            );
         }
     }
 
     #[test]
     fn test_decode_raw_coefficients_grayscale() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/reftest/images/mozilla/jpg-gray.jpg");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/reftest/images/mozilla/jpg-gray.jpg");
         let data = std::fs::read(&path).expect("failed to read test JPEG");
         let mut decoder = Decoder::new(&data[..]);
         let raw = decoder.decode_raw_coefficients().unwrap();
@@ -1725,15 +1732,19 @@ mod tests {
         let raw = decoder.decode_raw_coefficients().unwrap();
 
         // At minimum, DC coefficients (every 64th value starting at 0) should have nonzero values
-        let has_nonzero_dc = raw.components[0]
-            .chunks(64)
-            .any(|block| block[0] != 0);
-        assert!(has_nonzero_dc, "expected at least some nonzero DC coefficients");
+        let has_nonzero_dc = raw.components[0].chunks(64).any(|block| block[0] != 0);
+        assert!(
+            has_nonzero_dc,
+            "expected at least some nonzero DC coefficients"
+        );
 
         // And at least some AC coefficients should be nonzero
         let has_nonzero_ac = raw.components[0]
             .chunks(64)
             .any(|block| block[1..].iter().any(|&v| v != 0));
-        assert!(has_nonzero_ac, "expected at least some nonzero AC coefficients");
+        assert!(
+            has_nonzero_ac,
+            "expected at least some nonzero AC coefficients"
+        );
     }
 }

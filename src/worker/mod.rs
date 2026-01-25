@@ -6,7 +6,7 @@ mod multithreaded;
 ))]
 mod rayon;
 
-use crate::decoder::{choose_color_convert_func, ColorTransform};
+use crate::decoder::{ColorTransform, choose_color_convert_func};
 use crate::error::Result;
 use crate::parser::{Component, Dimensions};
 use crate::upsampler::Upsampler;

@@ -1,7 +1,7 @@
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use rayon::slice::ParallelSliceMut;
 
-use crate::decoder::{choose_color_convert_func, ColorTransform};
+use crate::decoder::{ColorTransform, choose_color_convert_func};
 use crate::error::Result;
 use crate::idct::dequantize_and_idct_block;
 use crate::parser::Component;

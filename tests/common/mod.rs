@@ -6,14 +6,15 @@ use walkdir::WalkDir;
 pub fn test_files(test_dir: &Path) -> Vec<PathBuf> {
     let mut test_files = vec![];
 
-    for entry in WalkDir::new(&test_dir) {
+    for entry in WalkDir::new(test_dir) {
         let entry = entry.unwrap();
         let path = entry.path();
 
-        if let Some(extension) = path.extension() {
-            if path.is_file() && (extension == "jpg" || extension == "jpeg") {
-                test_files.push(path.to_owned());
-            }
+        if let Some(extension) = path.extension()
+            && path.is_file()
+            && (extension == "jpg" || extension == "jpeg")
+        {
+            test_files.push(path.to_owned());
         }
     }
 
@@ -28,7 +29,10 @@ pub fn test_files(test_dir: &Path) -> Vec<PathBuf> {
             let path = test_dir.join(Path::new(&line));
 
             if !test_files.contains(&path) {
-                panic!("The file {line:?} specified in {:?} could not be found among the files being tested", test_dir.join("disabled.txt"));
+                panic!(
+                    "The file {line:?} specified in {:?} could not be found among the files being tested",
+                    test_dir.join("disabled.txt")
+                );
             }
 
             let position = test_files.iter().position(|p| p == &path).unwrap();

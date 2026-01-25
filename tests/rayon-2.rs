@@ -14,7 +14,7 @@ fn decoding_in_global_pool() {
     let _: Vec<_> = (0..1024)
         .map(|_| {
             std::thread::spawn(move || {
-                let mut decoder = Decoder::new(File::open(&path).unwrap());
+                let mut decoder = Decoder::new(File::open(path).unwrap());
                 let _ = decoder.decode().unwrap();
             });
         })

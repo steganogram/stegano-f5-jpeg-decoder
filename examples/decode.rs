@@ -3,11 +3,11 @@ extern crate stegano_f5_jpeg_decoder as jpeg;
 
 use std::env;
 use std::fs::File;
-use std::io::{self, BufReader, Write};
+use std::io::BufReader;
 use std::process;
 
 fn usage() -> ! {
-    write!(io::stderr(), "usage: decode image.jpg image.png").unwrap();
+    eprint!("usage: decode image.jpg image.png");
     process::exit(1)
 }
 
@@ -39,7 +39,7 @@ fn main() {
             encoder.set_color(png::ColorType::RGB);
         }
         jpeg::PixelFormat::CMYK32 => {
-            data = cmyk_to_rgb(&mut data);
+            data = cmyk_to_rgb(&data);
             encoder.set_depth(png::BitDepth::Eight);
             encoder.set_color(png::ColorType::RGB)
         }
