@@ -1,4 +1,5 @@
 #![allow(unsafe_code)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 mod neon;
 mod ssse3;
