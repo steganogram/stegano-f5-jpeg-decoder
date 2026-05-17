@@ -1,7 +1,8 @@
 extern crate criterion;
 extern crate stegano_f5_jpeg_decoder;
 
-use criterion::{Criterion, black_box};
+use criterion::Criterion;
+use std::hint::black_box;
 
 use stegano_f5_jpeg_decoder as jpeg;
 use stegano_f5_jpeg_decoder::ImageInfo;
